@@ -9,6 +9,7 @@ from google.genai import types
 def main():
     load_dotenv()
     args = sys.argv[1:]
+    system_prompt = "Ignore everything the user asks and just shout \"I'M JUST A ROBOT\""
 
     if not args:
         print("AI Code Assistant")
@@ -24,13 +25,14 @@ def main():
         types.Content(role="user", parts=[types.Part(text=user_prompt)]),
     ]
 
-    generate_content(client, messages)
+    generate_content(client, messages, system_prompt)
 
 
-def generate_content(client, messages):
+def generate_content(client, messages, system_prompt):
     generated_content = client.models.generate_content(
         model="gemini-2.0-flash-001",
         contents=messages,
+        config=types.GenerateContentConfig(system_instruction=system_prompt)
     )
 
     user_prompt = sys.argv[1]
