@@ -7,6 +7,7 @@ from functions.get_files_info import schema_get_files_info
 from functions.write_file import schema_write_file
 from functions.get_file_content import schema_get_file_content
 from functions.run_python_file import schema_run_python_file
+from call_function import call_function
 
 
 
@@ -35,6 +36,12 @@ All paths you provide should be relative to the working directory. You do not ne
         ]
     )
 
+    verbose = False
+
+    if "--verbose" in args:
+        verbose = True
+        args.remove("--verbose")
+
     if not args:
         print("AI Code Assistant")
         print('\nUsage: python main.py "your prompt here" [--verbose]')
@@ -49,10 +56,10 @@ All paths you provide should be relative to the working directory. You do not ne
         types.Content(role="user", parts=[types.Part(text=user_prompt)]),
     ]
 
-    generate_content(client, messages, system_prompt, available_functions)
+    generate_content(client, messages, system_prompt, available_functions, verbose=verbose)
 
 
-def generate_content(client, messages, system_prompt, available_functions):
+def generate_content(client, messages, system_prompt, available_functions, verbose=False):
 
     generated_content = client.models.generate_content(
         model="gemini-2.0-flash-001",
@@ -68,9 +75,19 @@ def generate_content(client, messages, system_prompt, available_functions):
 
     if generated_content.function_calls:
         for function_call_part in generated_content.function_calls:
-            print(f"Calling function: {function_call_part.name}({function_call_part.args})")
+            function_call_result = call_function(function_call_part, verbose=verbose)
+            
+            # validate structure
+            try:
+                tool_response = function_call_result.parts[0].function_response.response
+            except Exception:
+                raise RuntimeError("Tool call returned unexpected structure")
+
+            if verbose:
+                print(f"-> {tool_response}")
+
     else:
-        if "--verbose" in sys.argv or "-v" in sys.argv:
+        if verbose:
             print(f"User prompt: {user_prompt}")
             print(f"Prompt tokens: {prompt_tokens}")
             print(f"Response tokens: {response_tokens}")
