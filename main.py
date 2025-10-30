@@ -58,57 +58,99 @@ If a tool can accomplish the request, respond with a function call. Prefer defau
         types.Content(role="user", parts=[types.Part(text=user_prompt)]),
     ]
 
-    generate_content(client, messages, system_prompt, available_functions, verbose=verbose)
+    for i in range(20):
+        done = generate_content(client, messages, system_prompt, available_functions, verbose=verbose)
+        if done:
+            break
 
 
 def generate_content(client, messages, system_prompt, available_functions, verbose=False):
-
-    generated_content = client.models.generate_content(
-        model="gemini-2.0-flash-001",
-        contents=messages,
-        config=types.GenerateContentConfig(
-            tools=[available_functions], system_instruction=system_prompt
-        )
-    )
-
-    user_prompt = sys.argv[1]
-    prompt_tokens = generated_content.usage_metadata.prompt_token_count
-    response_tokens = generated_content.usage_metadata.candidates_token_count
-
-    if generated_content.function_calls:
-        for function_call_part in generated_content.function_calls:
-            function_call_result = call_function(function_call_part, verbose=verbose)
-            
-            # validate structure
-            try:
-                tool_response = function_call_result.parts[0].function_response.response
-            except Exception:
-                raise RuntimeError("Tool call returned unexpected structure")
-
-            if verbose:
-                print(f"-> {tool_response}")
-
-    else:
-        # simple fallback for obvious requests
-        lower = user_prompt.lower()
-        if "run tests.py" in lower or ("run" in lower and "tests.py" in lower):
-            fc = types.FunctionCall(
-                name="run_python_file",
-                args={"file_path": "tests.py"},
+    try:
+        generated_content = client.models.generate_content(
+            model="gemini-2.0-flash-001",
+            contents=messages,
+            config=types.GenerateContentConfig(
+                tools=[available_functions], system_instruction=system_prompt
             )
-            function_call_result = call_function(fc, verbose=verbose)
-            tool_response = function_call_result.parts[0].function_response.response
-            if verbose:
-                print(f"-> {tool_response}")
+        )
 
-        if verbose:
-            print(f"User prompt: {user_prompt}")
-            print(f"Prompt tokens: {prompt_tokens}")
-            print(f"Response tokens: {response_tokens}")
-            print("Response:")
-            print(generated_content.text)
+        for cand in generated_content.candidates:
+            messages.append(cand.content)
+
+        user_prompt = sys.argv[1]
+        prompt_tokens = generated_content.usage_metadata.prompt_token_count
+        response_tokens = generated_content.usage_metadata.candidates_token_count
+
+        if generated_content.function_calls:
+            for function_call_part in generated_content.function_calls:
+                print(f"- Calling function: {function_call_part.name}")
+                function_call_result = call_function(function_call_part, verbose=verbose)
+
+                # validate structure
+               
+                tool_response = function_call_result.parts[0].function_response.response
+                tool_name = function_call_part.name
+                messages.append(
+                    types.Content(
+                        role="user",
+                        parts=[
+                            types.Part(
+                                function_response=types.FunctionResponse(
+                                    name=tool_name,
+                                    response=tool_response,
+                                )
+                            )
+                        ],
+                    )
+                )
+                if verbose:
+                    print(f"-> {tool_response}")
+            return False
+
         else:
+            # simple fallback for obvious requests
+            lower = user_prompt.lower()
+            if "run tests.py" in lower or ("run" in lower and "tests.py" in lower):
+                fc = types.FunctionCall(
+                    name="run_python_file",
+                    args={"file_path": "tests.py"},
+                )
+                print(f"- Calling function: {fc.name}")
+                function_call_result = call_function(fc, verbose=verbose)
+                tool_response = function_call_result.parts[0].function_response.response
+
+                tool_name = fc.name
+                messages.append(
+                    types.Content(
+                        role="user",
+                        parts=[
+                            types.Part(
+                                function_response=types.FunctionResponse(
+                                    name=tool_name,
+                                    response=tool_response,
+                                )
+                            )
+                        ],
+                    )
+                )
+
+                if verbose:
+                    print(f"-> {tool_response}")
+
+            if verbose:
+                print(f"User prompt: {user_prompt}")
+                print(f"Prompt tokens: {prompt_tokens}")
+                print(f"Response tokens: {response_tokens}")
+                print("Response:")
+
+        if generated_content.text:
             print(generated_content.text)
+            return True
+
+        return False
+    except Exception as e:
+        print(e)
+        return True
     
 
 if __name__ == "__main__":
