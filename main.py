@@ -25,6 +25,8 @@ When a user asks a question or makes a request, make a function call plan. You c
 - Write or overwrite files
 
 All paths you provide should be relative to the working directory. You do not need to specify the working directory in your function calls as it is automatically injected for security reasons.
+
+If a tool can accomplish the request, respond with a function call. Prefer defaults when obvious (e.g., run tests.py with no extra args). Do not ask for arguments unless strictly necessary.
 """
 
     available_functions = types.Tool(
@@ -87,6 +89,18 @@ def generate_content(client, messages, system_prompt, available_functions, verbo
                 print(f"-> {tool_response}")
 
     else:
+        # simple fallback for obvious requests
+        lower = user_prompt.lower()
+        if "run tests.py" in lower or ("run" in lower and "tests.py" in lower):
+            fc = types.FunctionCall(
+                name="run_python_file",
+                args={"file_path": "tests.py"},
+            )
+            function_call_result = call_function(fc, verbose=verbose)
+            tool_response = function_call_result.parts[0].function_response.response
+            if verbose:
+                print(f"-> {tool_response}")
+
         if verbose:
             print(f"User prompt: {user_prompt}")
             print(f"Prompt tokens: {prompt_tokens}")
